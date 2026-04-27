@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+captures/
+.cxx/
+.idea/
+*.iml
+.DS_Store
+gradle/wrapper/gradle-wrapper.jar
+.kotlin/
+out/
