@@ -162,8 +162,9 @@ public class LedgerMemClient(
             }
 
             if (isRetryableStatus(response.code) && attempt < maxAttempts - 1) {
+                val hint = parseRetryAfterMs(response.header("Retry-After"))
                 response.close()
-                kotlinx.coroutines.delay(retryDelayMs(attempt))
+                kotlinx.coroutines.delay(hint ?: retryDelayMs(attempt))
                 return@repeat
             }
 
@@ -182,13 +183,39 @@ public class LedgerMemClient(
         throw LedgerMemException.Transport("request failed after retries", null)
     }
 
-    private fun isRetryableStatus(status: Int): Boolean =
-        status == 429 || status in 500..599
+    private fun isRetryableStatus(status: Int): Boolean {
+        // 501 Not Implemented is permanent — retrying wastes round-trips.
+        if (status == 501) return false
+        return status == 429 || status in 500..599
+    }
 
     private fun retryDelayMs(attempt: Int): Long {
         val shifted = RETRY_BASE_DELAY_MS shl attempt.coerceAtMost(20)
         val capped = minOf(shifted, RETRY_MAX_DELAY_MS)
         return (0..capped).random()
+    }
+
+    /**
+     * Parse a Retry-After header (delta-seconds or HTTP-date). Returns
+     * `null` when absent or unparseable. The result is capped at
+     * [RETRY_MAX_DELAY_MS] so a hostile server cannot stall the client.
+     */
+    private fun parseRetryAfterMs(value: String?): Long? {
+        val raw = value?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        raw.toLongOrNull()?.let {
+            if (it < 0) return null
+            return minOf(it * 1000L, RETRY_MAX_DELAY_MS)
+        }
+        return try {
+            val instant = java.time.ZonedDateTime
+                .parse(raw, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+                .toInstant()
+            val delta = instant.toEpochMilli() - System.currentTimeMillis()
+            if (delta <= 0) 0L else minOf(delta, RETRY_MAX_DELAY_MS)
+        } catch (_: java.time.format.DateTimeParseException) {
+            null
+        }
     }
 
     private suspend fun await(call: Call): Response = suspendCancellableCoroutine { cont ->
