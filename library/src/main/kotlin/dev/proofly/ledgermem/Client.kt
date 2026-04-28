@@ -57,7 +57,7 @@ public class LedgerMemClient(
     public suspend fun list(cursor: String? = null, limit: Int? = null): ListResult {
         val builder = StringBuilder("/v1/memories")
         val params = buildList {
-            if (cursor != null) add("cursor=$cursor")
+            if (cursor != null) add("cursor=${urlEncode(cursor)}")
             if (limit != null) add("limit=$limit")
         }
         if (params.isNotEmpty()) {
@@ -77,7 +77,9 @@ public class LedgerMemClient(
         do {
             val page = list(cursor = cursor, limit = pageSize)
             if (page.memories.isNotEmpty()) emit(page.memories)
-            cursor = page.nextCursor
+            // Treat blank cursor as end-of-stream to avoid an infinite loop when
+            // the server returns "" instead of null.
+            cursor = page.nextCursor?.takeIf { it.isNotBlank() }
         } while (cursor != null)
     }.flowOn(Dispatchers.IO)
 
