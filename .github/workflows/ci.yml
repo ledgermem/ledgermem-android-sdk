@@ -4,15 +4,20 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   validate-wrapper:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: gradle/wrapper-validation-action@v3
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: validate-wrapper
     steps:
       - uses: actions/checkout@v4

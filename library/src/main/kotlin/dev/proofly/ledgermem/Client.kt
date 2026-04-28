@@ -27,8 +27,10 @@ public class LedgerMemClient(
         val workspaceId: String,
         val baseUrl: String = "https://api.proofly.dev",
         val httpClient: OkHttpClient = defaultClient(),
+        val maxRetries: Int = DEFAULT_MAX_RETRIES,
     ) {
         public companion object {
+            public const val DEFAULT_MAX_RETRIES: Int = 3
             public fun defaultClient(): OkHttpClient = OkHttpClient.Builder().build()
         }
     }
@@ -130,33 +132,63 @@ public class LedgerMemClient(
 
     private suspend fun executeRaw(method: String, path: String, body: String?): Response {
         val url = (config.baseUrl.trimEnd('/') + path).toHttpUrl()
-        val builder = Request.Builder()
-            .url(url)
-            .header("Authorization", "Bearer ${config.apiKey}")
-            .header("x-workspace-id", config.workspaceId)
-            .header("Accept", "application/json")
+        val maxAttempts = config.maxRetries.coerceAtLeast(0) + 1
 
-        val rb = body?.toRequestBody(jsonMedia)
-        when (method) {
-            "GET" -> builder.get()
-            "DELETE" -> builder.delete(rb)
-            "POST" -> builder.post(rb ?: "".toRequestBody(jsonMedia))
-            "PATCH" -> builder.patch(rb ?: "".toRequestBody(jsonMedia))
-            else -> error("Unsupported method: $method")
-        }
+        repeat(maxAttempts) { attempt ->
+            val builder = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer ${config.apiKey}")
+                .header("x-workspace-id", config.workspaceId)
+                .header("Accept", "application/json")
+                .header("User-Agent", "ledgermem-android/$SDK_VERSION")
 
-        val response = await(config.httpClient.newCall(builder.build()))
-        if (!response.isSuccessful) {
-            val raw = response.body?.string().orEmpty()
-            response.close()
-            val parsed = runCatching { json.decodeFromString(ApiError.serializer(), raw) }.getOrNull()
-            throw LedgerMemException.Http(
-                status = response.code,
-                message = parsed?.error ?: "request failed",
-                code = parsed?.code,
-            )
+            val rb = body?.toRequestBody(jsonMedia)
+            when (method) {
+                "GET" -> builder.get()
+                "DELETE" -> builder.delete(rb)
+                "POST" -> builder.post(rb ?: "".toRequestBody(jsonMedia))
+                "PATCH" -> builder.patch(rb ?: "".toRequestBody(jsonMedia))
+                else -> error("Unsupported method: $method")
+            }
+
+            val response = try {
+                await(config.httpClient.newCall(builder.build()))
+            } catch (transport: LedgerMemException.Transport) {
+                if (attempt < maxAttempts - 1) {
+                    kotlinx.coroutines.delay(retryDelayMs(attempt))
+                    return@repeat
+                }
+                throw transport
+            }
+
+            if (isRetryableStatus(response.code) && attempt < maxAttempts - 1) {
+                response.close()
+                kotlinx.coroutines.delay(retryDelayMs(attempt))
+                return@repeat
+            }
+
+            if (!response.isSuccessful) {
+                val raw = response.body?.string().orEmpty()
+                response.close()
+                val parsed = runCatching { json.decodeFromString(ApiError.serializer(), raw) }.getOrNull()
+                throw LedgerMemException.Http(
+                    status = response.code,
+                    message = parsed?.error ?: "request failed",
+                    code = parsed?.code,
+                )
+            }
+            return response
         }
-        return response
+        throw LedgerMemException.Transport("request failed after retries", null)
+    }
+
+    private fun isRetryableStatus(status: Int): Boolean =
+        status == 429 || status in 500..599
+
+    private fun retryDelayMs(attempt: Int): Long {
+        val shifted = RETRY_BASE_DELAY_MS shl attempt.coerceAtMost(20)
+        val capped = minOf(shifted, RETRY_MAX_DELAY_MS)
+        return (0..capped).random()
     }
 
     private suspend fun await(call: Call): Response = suspendCancellableCoroutine { cont ->
@@ -174,4 +206,10 @@ public class LedgerMemClient(
 
     private fun urlEncode(value: String): String =
         java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+    private companion object {
+        const val SDK_VERSION = "0.1.0"
+        const val RETRY_BASE_DELAY_MS = 200L
+        const val RETRY_MAX_DELAY_MS = 5_000L
+    }
 }
