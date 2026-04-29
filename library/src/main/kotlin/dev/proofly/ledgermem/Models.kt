@@ -1,4 +1,4 @@
-package dev.proofly.ledgermem
+package dev.proofly.getmnemo
 
 import kotlinx.serialization.Serializable
 
@@ -59,11 +59,11 @@ internal data class ApiError(
     val code: String? = null,
 )
 
-public sealed class LedgerMemException(message: String, cause: Throwable? = null) :
+public sealed class MnemoException(message: String, cause: Throwable? = null) :
     RuntimeException(message, cause) {
-    public class Configuration(message: String) : LedgerMemException(message)
+    public class Configuration(message: String) : MnemoException(message)
     public class Http(public val status: Int, message: String, public val code: String?) :
-        LedgerMemException("HTTP $status: $message")
-    public class Decoding(message: String, cause: Throwable?) : LedgerMemException(message, cause)
-    public class Transport(message: String, cause: Throwable?) : LedgerMemException(message, cause)
+        MnemoException("HTTP $status: $message")
+    public class Decoding(message: String, cause: Throwable?) : MnemoException(message, cause)
+    public class Transport(message: String, cause: Throwable?) : MnemoException(message, cause)
 }

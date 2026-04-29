@@ -1,4 +1,4 @@
-package dev.proofly.ledgermem
+package dev.proofly.getmnemo
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -19,13 +19,13 @@ import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-public class LedgerMemClient(
+public class MnemoClient(
     public val config: Config,
 ) {
     public data class Config(
         val apiKey: String,
         val workspaceId: String,
-        val baseUrl: String = "https://api.proofly.dev",
+        val baseUrl: String = "https://api.getmnemo.xyz",
         val httpClient: OkHttpClient = defaultClient(),
         val maxRetries: Int = DEFAULT_MAX_RETRIES,
     ) {
@@ -122,7 +122,7 @@ public class LedgerMemClient(
             return try {
                 json.decodeFromString(deserializer, payload)
             } catch (err: Throwable) {
-                throw LedgerMemException.Decoding(
+                throw MnemoException.Decoding(
                     "Failed to decode ${deserializer.descriptor.serialName}: ${err.message}",
                     err,
                 )
@@ -140,7 +140,7 @@ public class LedgerMemClient(
                 .header("Authorization", "Bearer ${config.apiKey}")
                 .header("x-workspace-id", config.workspaceId)
                 .header("Accept", "application/json")
-                .header("User-Agent", "ledgermem-android/$SDK_VERSION")
+                .header("User-Agent", "getmnemo-android/$SDK_VERSION")
 
             val rb = body?.toRequestBody(jsonMedia)
             when (method) {
@@ -153,7 +153,7 @@ public class LedgerMemClient(
 
             val response = try {
                 await(config.httpClient.newCall(builder.build()))
-            } catch (transport: LedgerMemException.Transport) {
+            } catch (transport: MnemoException.Transport) {
                 if (attempt < maxAttempts - 1) {
                     kotlinx.coroutines.delay(retryDelayMs(attempt))
                     return@repeat
@@ -172,7 +172,7 @@ public class LedgerMemClient(
                 val raw = response.body?.string().orEmpty()
                 response.close()
                 val parsed = runCatching { json.decodeFromString(ApiError.serializer(), raw) }.getOrNull()
-                throw LedgerMemException.Http(
+                throw MnemoException.Http(
                     status = response.code,
                     message = parsed?.error ?: "request failed",
                     code = parsed?.code,
@@ -180,7 +180,7 @@ public class LedgerMemClient(
             }
             return response
         }
-        throw LedgerMemException.Transport("request failed after retries", null)
+        throw MnemoException.Transport("request failed after retries", null)
     }
 
     private fun isRetryableStatus(status: Int): Boolean {
@@ -221,7 +221,7 @@ public class LedgerMemClient(
     private suspend fun await(call: Call): Response = suspendCancellableCoroutine { cont ->
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                cont.resumeWithException(LedgerMemException.Transport(e.message ?: "io error", e))
+                cont.resumeWithException(MnemoException.Transport(e.message ?: "io error", e))
             }
 
             override fun onResponse(call: Call, response: Response) {

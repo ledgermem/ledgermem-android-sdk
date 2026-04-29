@@ -1,4 +1,4 @@
-package dev.proofly.ledgermem
+package dev.proofly.getmnemo
 
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -12,14 +12,14 @@ import org.junit.jupiter.api.assertThrows
 
 class ClientTest {
     private lateinit var server: MockWebServer
-    private lateinit var client: LedgerMemClient
+    private lateinit var client: MnemoClient
 
     @BeforeEach
     fun setUp() {
         server = MockWebServer()
         server.start()
-        client = LedgerMemClient(
-            LedgerMemClient.Config(
+        client = MnemoClient(
+            MnemoClient.Config(
                 apiKey = "test_key",
                 workspaceId = "ws_test",
                 baseUrl = server.url("/").toString().trimEnd('/'),
@@ -99,7 +99,7 @@ class ClientTest {
                 .setHeader("Content-Type", "application/json")
                 .setBody("""{ "error": "missing_workspace", "code": "auth.invalid" }"""),
         )
-        val err = assertThrows<LedgerMemException.Http> {
+        val err = assertThrows<MnemoException.Http> {
             client.list()
         }
         assertEquals(401, err.status)

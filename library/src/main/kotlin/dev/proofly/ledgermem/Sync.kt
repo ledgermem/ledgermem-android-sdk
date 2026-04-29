@@ -1,4 +1,4 @@
-package dev.proofly.ledgermem
+package dev.proofly.getmnemo
 
 import android.content.Context
 import androidx.work.Constraints
@@ -14,13 +14,13 @@ import java.util.concurrent.TimeUnit
  * Periodic background sync via WorkManager.
  *
  * Integrators provide a concrete [Provider] that returns the configured
- * client + cache; `LedgerMemSync.schedule(context)` enqueues a work request
+ * client + cache; `MnemoSync.schedule(context)` enqueues a work request
  * that runs roughly every 30 minutes when the device has connectivity.
  */
-public object LedgerMemSync {
+public object MnemoSync {
 
     public interface Provider {
-        public fun client(): LedgerMemClient
+        public fun client(): MnemoClient
         public fun cache(): MemoryCache
     }
 
@@ -32,9 +32,9 @@ public object LedgerMemSync {
     }
 
     internal fun current(): Provider =
-        provider ?: error("LedgerMemSync.install(provider) must be called before scheduling sync")
+        provider ?: error("MnemoSync.install(provider) must be called before scheduling sync")
 
-    public const val WORK_NAME: String = "dev.proofly.ledgermem.sync"
+    public const val WORK_NAME: String = "dev.proofly.getmnemo.sync"
 
     public fun schedule(context: Context, intervalMinutes: Long = 30) {
         val constraints = Constraints.Builder()
@@ -61,13 +61,13 @@ public class SyncWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = try {
-        val provider = LedgerMemSync.current()
+        val provider = MnemoSync.current()
         val page = provider.client().list(limit = 50)
         provider.cache().upsertAll(page.memories)
         Result.success()
-    } catch (err: LedgerMemException.Transport) {
+    } catch (err: MnemoException.Transport) {
         Result.retry()
-    } catch (err: LedgerMemException.Http) {
+    } catch (err: MnemoException.Http) {
         if (err.status in 500..599) Result.retry() else Result.failure()
     } catch (err: Throwable) {
         Result.failure()

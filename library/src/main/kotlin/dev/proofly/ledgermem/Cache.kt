@@ -1,4 +1,4 @@
-package dev.proofly.ledgermem
+package dev.proofly.getmnemo
 
 import androidx.room.ColumnInfo
 import androidx.room.Dao
